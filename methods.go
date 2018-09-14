@@ -20,150 +20,22 @@ import (
 "bytes"
 "encoding/json"
 "fmt"
-"io/ioutil"
 "log"
 "net/http"
-"reflect"
-"strings"
-"sync"
-"sort"
 "CGSchudeler/kubernetes-scheduler/kubernetes"
+
 
 )
 
-// Retrieves the metrics information using a name node by calling the Sysdig Api
-func GetMetrics(hostname string) (metricValue float64, err error) {
-	hostFilter := fmt.Sprintf(`host.hostName = '%s'`, hostname)
-	start := -60 // TODO make this configurable by params
-	end := 0
-	sampling := 60 // TODO make this configurable by params
-
-	metricDataResponse, err := sysdigAPI.GetData(metrics, start, end, sampling, hostFilter, "host")
-	if err != nil {
-		return
-	} else if metricDataResponse.StatusCode != 200 {
-		err = fmt.Errorf("metric data response: %s", metricDataResponse.Status)
-		return
-	}
-	defer metricDataResponse.Body.Close()
-
-	all, err := ioutil.ReadAll(metricDataResponse.Body)
-
-	var metricData struct {
-		Data []struct {
-			D []float64 `json:"d"`
-		} `json:"data"`
-	}
-
-	err = json.Unmarshal(all, &metricData)
-	if err != nil {
-		return
-	}
-
-	if len(metricData.Data) > 0 && len(metricData.Data[0].D) > 0 {
-		metricValue = metricData.Data[0].D[0]
-	} else {
-		err = noDataFound
-	}
-
-	return
+type Node1 struct {
+	name   string
+	metric float64
+	err    error
 }
 
-var bestNodeMutex sync.Mutex
+type NodeList1 []Node1
 
-// Calculates the best node based in the metrics provided form a list of node names
-func GetBestNodeByMetrics(nodes []string) (bestNodeFound Node, err error) {
-	bestNodeMutex.Lock()
-	defer bestNodeMutex.Unlock()
 
-	if len(nodes) == 0 {
-		err = emptyNodeList
-		return
-	}
-
-	// If the best node was cached, return it
-	if cachedNodes, ok := cachedNodes.Data(); ok {
-		if reflect.DeepEqual(cachedNodes, nodes) {
-			if bestNode, ok := bestCachedNode.Data(); ok {
-				log.Println("Using cache...")
-				return bestNode.(Node), nil
-			}
-		}
-	}
-
-	// We will make all the request asynchronous for performance reasons
-	wg := sync.WaitGroup{}
-	nodeStatsChannel := make(chan Node, len(nodes))
-	nodeStatsErrorsChannel := make(chan Node, len(nodes))
-
-	// Launch all requests asynchronously
-	// to retrieve the metrics of each node
-	for _, node := range nodes {
-		wg.Add(1)
-
-		go func(nodeName string) {
-			defer wg.Done()
-
-			split := strings.Split(nodeName, ".")
-			nodeNameLittle := split[0]
-
-			metricsValue, err := GetMetrics(nodeNameLittle)
-			if err == nil { // No error found, we will send the struct
-				nodeStatsChannel <- Node{name: nodeName, metric: metricsValue}
-			} else {
-				nodeStatsErrorsChannel <- Node{name: nodeName, err: err}
-			}
-		}(node)
-	}
-
-	wg.Wait()
-	close(nodeStatsChannel)
-	close(nodeStatsErrorsChannel)
-
-	// Fill the list with all the succeeded nodes
-	nodeList := NodeList{}
-	for node := range nodeStatsChannel {
-		nodeList = append(nodeList, node)
-	}
-	if len(nodeList) == 0 {
-		err = noNodeFound
-	}
-
-	// Calculate the best node
-	bestNodeFound, err = BestNodeFromList(nodeList)
-	if err != nil {
-		return
-	}
-
-	// Print any errors found
-	errorHappenedString := `Error retrieving node "%s": "%s" \n`
-	for node := range nodeStatsErrorsChannel {
-		log.Printf(errorHappenedString, node.name, node.err.Error())
-	}
-
-	// No errors found? Cache the result
-	if err == nil {
-		bestCachedNode.SetData(bestNodeFound)
-	}
-
-	return
-}
-
-// Sorts the list and returns the best node
-func BestNodeFromList(list NodeList) (node Node, err error) {
-	sort.Sort(list)
-
-	length := len(list)
-	if length == 0 {
-		return node, emptyNodeList
-	}
-
-	if sysdigMetricLower {
-		return list[0], nil // Get the first -> Lower
-	} else {
-		return list[length-1], nil // Get the last -> Higher
-	}
-}
 
 // Returns a list of all the available nodes found in the Kubernetes cluster
 func NodesAvailable() (readyNodes []string) {
@@ -186,6 +58,96 @@ func NodesAvailable() (readyNodes []string) {
 	 cachedNodes.SetData(readyNodes)
 	return readyNodes
 }
+
+
+
+
+func Decision (pod kubernetes.KubePod , ResourceAvailable []string, Resources []string , Information_table [][]interface{} )string   {
+	//the image asked by the user
+	PendingImage:=pod.Spec.Containers[0].Image
+	fmt.Println(PendingImage)
+	var ResourceSelected string
+	checkImage,repeat_image,ResourceIndex:=CheckInformationTable(PendingImage,Information_table) // call the CheckInformationTable function
+
+	if ( len(ResourceAvailable) > 0 ){
+		if (checkImage){
+			if (len(ResourceAvailable)==1) { // check if the cluster has single resource available
+				ResourceSelected = ResourceAvailable[0] //  assign the only resource available to the resource selected
+
+			}else if (len(ResourceAvailable)==len(Resources) ) { // check if all resource in the cluster are available
+				if (checkImage){ // check if the image asked is recorded
+					if (repeat_image==1) { // check if the image asked recoded one time
+						index:=ResourceIndex[0] // affect the resource index
+						ResourceSelected=(Information_table[index][2]).(string) // affect the resource selected
+
+					} else { // if more than image per resource recorded , call the function select best resource
+						ResourceSelected = SelectBestResource(ResourceIndex , Information_table  , ResourceAvailable ,true)
+
+					}
+				} else  { // if the image is not recorded
+
+					ResourceSelected =MathModel(ResourceAvailable) //call the mathematical model
+				}
+
+
+			} else if( len(ResourceAvailable) < len(Resources)) { // if some resource are available and another not
+
+				check_resource :=CheckResourceFill(ResourceAvailable ,Information_table  , ResourceIndex ) // call the check resource fill to fill the check resource table
+
+				if ((checkImage) && (len(check_resource)>=1) ) { // chkeck if the image is recorded and at least one of its resouce is available
+
+
+					if ((repeat_image >= 1) && ( (len(check_resource)==1)) ) { // check if one resource is available
+						//check_resource  := (Information_table[ResourceIndex[0]][2]).(string) // affect the resource of the image available
+
+						if (CheckResourceAvailable( ResourceAvailable,check_resource[0])){ // check if the resource of the image recorded avaialbe or not
+							ResourceSelected=check_resource[0]
+
+						} else { ResourceSelected =MathModel(ResourceAvailable) }
+
+
+					} else  if ( (repeat_image > 1) && len(check_resource)>1){ // if the image is recorded more than one time and its reources are available
+
+
+						ResourceSelected = SelectBestResource(ResourceIndex , Information_table  , ResourceAvailable ,true) // select the best resource
+
+					} else { ResourceSelected =MathModel(ResourceAvailable)
+
+					}
+
+
+
+				} else { ResourceSelected =MathModel(ResourceAvailable) }
+
+
+			}
+
+		} else  { // if the image is not recorded
+
+			ResourceSelected =MathModel(ResourceAvailable)
+		}
+
+	}
+
+
+
+
+	return ResourceSelected
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func FindDeploymentNameFromPod(pod kubernetes.KubePod) (deploymentName string, err error) {
 	if pod.Metadata.OwnerReferences[0].Kind == "ReplicaSet" {

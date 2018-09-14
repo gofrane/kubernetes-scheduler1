@@ -26,7 +26,9 @@ var (
 	sysdigMetricLower = true // When comparing the metrics, the lowest will be the best one
 	bestCachedNode    = cache.Cache{Timeout: 15 * time.Second}
 	cachedNodes       = cache.Cache{Timeout: 15 * time.Second}
+
 )
+
 
 // Errors
 var (
