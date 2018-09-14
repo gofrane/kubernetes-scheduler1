@@ -34,8 +34,9 @@ import (
 	"context"
 	"bytes"
 
-	"gopkg.in/yaml.v2"
-	"github.com/draios/kubernetes-scheduler/cache"
+
+	"CGSchudeler/kubernetes-scheduler/cache"
+	"cgs/yaml-2.2.1"
 )
 
 type KubernetesCoreV1Api struct {

@@ -1,20 +1,4 @@
-/*
-Copyright 2018 Sysdig.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-// A custom Kubernetes scheduler with custom metrics from Sysdig Monitor
 package main
 
 import (
@@ -24,12 +8,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	"github.com/draios/kubernetes-scheduler/cache"
-	kube "github.com/draios/kubernetes-scheduler/kubernetes"
-	"github.com/draios/kubernetes-scheduler/sysdig"
+	"CGSchudeler/kubernetes-scheduler/cache"
+	kube "CGSchudeler/kubernetes-scheduler/kubernetes"
+	"CGSchudeler/kubernetes-scheduler/sysdig"
 	"os/user"
 	"time"
+
 )
 
 // Variables that will be used in our scheduler
@@ -162,12 +146,12 @@ func main() {
 			if event.Object.Status.Phase == "Pending" && event.Object.Spec.SchedulerName == schedulerName && event.Type == "ADDED" {
 				log.Println("Scheduling", event.Object.Metadata.Name)
 
-				bestNodeFound, err := getBestNodeByMetrics(nodesAvailable())
+				bestNodeFound, err := GetBestNodeByMetrics(NodesAvailable())
 				if err != nil {
 					log.Println("error while retrieving the best node:", err.Error())
 					// In case a node could not be found, fallback to default scheduler
 					log.Println("falling back to the default scheduler...")
-					deploymentName, err := findDeploymentNameFromPod(event.Object)
+					deploymentName, err := FindDeploymentNameFromPod(event.Object)
 					if err != nil {
 						log.Fatalln(err)
 					}
@@ -183,7 +167,7 @@ func main() {
 					}
 				} else {
 					log.Println("Best node found: ", bestNodeFound.name, bestNodeFound.metric)
-					response, err := scheduler(event.Object.Metadata.Name, bestNodeFound.name, event.Object.Metadata.Namespace)
+					response, err := Scheduler(event.Object.Metadata.Name, bestNodeFound.name, event.Object.Metadata.Namespace)
 					if err != nil {
 						log.Println("error while scheduling a pod:", err)
 					}
