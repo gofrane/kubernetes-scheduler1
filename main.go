@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"time"
 
+
 )
 
 // Variables that will be used in our scheduler
@@ -148,7 +149,19 @@ func main() {
 			if event.Object.Status.Phase == "Pending" && event.Object.Spec.SchedulerName == schedulerName && event.Type == "ADDED" {
 				log.Println("Scheduling", event.Object.Metadata.Name)
 
-				bestNodeFound, err := GetBestNodeByMetrics(NodesAvailable())
+
+////////////////// FOR DECISION
+				var NewPod kube.KubePod
+
+				readyNodes:=NodesAvailable()
+				nodes, err :=kubeAPI.ListNodes() // the node on the cluster
+
+				Lnode:=len(nodes) // how many nodes on the cluster
+				var InformationTable=[][]interface{}{}
+				bestNodeFound, err :=Decision (NewPod  , readyNodes , Lnode  , InformationTable  )
+
+
+				///////////////////////////////////////////
 				if err != nil {
 					log.Println("error while retrieving the best node:", err.Error())
 					// In case a node could not be found, fallback to default scheduler
@@ -168,8 +181,8 @@ func main() {
 						}
 					}
 				} else {
-					log.Println("Best node found: ", bestNodeFound.name, bestNodeFound.metric)
-					response, err := Scheduler(event.Object.Metadata.Name, bestNodeFound.name, event.Object.Metadata.Namespace)
+					log.Println("Best node found: ", bestNodeFound, )
+					response, err := Scheduler(event.Object.Metadata.Name, bestNodeFound, event.Object.Metadata.Namespace)
 					if err != nil {
 						log.Println("error while scheduling a pod:", err)
 					}
